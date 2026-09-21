@@ -27,6 +27,8 @@
     --presentlate: #FF7F00;
     --presentlate-dim: #4A2E00;
     --dnr: #8139EE;
+    --holiday: #00B3A4;
+    --holiday-dim: #0B3A38;
     --dnr-dim: #2E1750;
 
     --font-display: 'Inter', sans-serif;
@@ -49,6 +51,7 @@
     --off-dim: #E7E8ED;
     --presentlate-dim: #FFE8CC;
     --dnr-dim: #EDE0FB;
+    --holiday-dim: #D2F4F1;
   }
 
   /* Sprout-brand light theme — gradient backdrop + soft elevated cards,
@@ -187,6 +190,7 @@
   .summary-card.restday { --accent-color: var(--off); }
   .summary-card.leave { --accent-color: var(--leave); }
   .summary-card.ontime { --accent-color: var(--ontime); }
+  .summary-card.holiday { --accent-color: var(--holiday); }
 
   .control-bar { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; display: flex; gap: 20px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; font-size: 12px; }
   .refresh-btn { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 6px 14px; border-radius: 4px; cursor: pointer; }
@@ -251,10 +255,11 @@
   .quick-pill.ontime .quick-dot { background: var(--ontime); }
   .quick-pill.onleave .quick-dot { background: var(--leave); }
   .quick-pill.restday .quick-dot { background: var(--off); }
+  .quick-pill.holiday .quick-dot { background: var(--holiday); }
   .quick-delta { color: var(--text-dim); font-size: 10px; }
   .status-text { color: var(--text-dim); font-size: 11px; }
   .settings-link { color: var(--text-dim); font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: underline; }
-  #settingsLink { margin-left: auto; }
+  #resetAdminLink { margin-left: auto; }
 
   .group { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
   .group-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; cursor: pointer; user-select: none; transition: background .15s ease; }
@@ -315,6 +320,7 @@
   .group.restDay { --accent-color: var(--off); --accent-dim: var(--off-dim); }
   .group.onLeave { --accent-color: var(--leave); --accent-dim: var(--leave-dim); }
   .group.onTime { --accent-color: var(--ontime); --accent-dim: var(--ontime-dim); }
+  .group.holiday { --accent-color: var(--holiday); --accent-dim: var(--holiday-dim); }
   .group-header .title { color: var(--accent-color, var(--text)); }
   .group.empty-group .title { color: var(--text-muted); }
   .group.empty-group .status-dot { opacity: 0.5; }
@@ -323,6 +329,9 @@
   .group-body { border-top: 1px solid var(--border); }
   .group.collapsed .group-body { display: none; }
   .group-empty { padding: 14px 18px; color: var(--text-dim); font-size: 12px; }
+  .shift-filter-row { padding: 10px 16px; background: var(--panel-2); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
+  .shift-filter-row label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .shift-filter-select { background: var(--panel); border: 1px solid var(--border); color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
   table col.col-employee { width: 22%; }
@@ -364,7 +373,22 @@
   .compact .emp-name { font-size: 12px; }
   .emp-name { font-family: var(--font-display); font-weight: 600; font-size: 14px; }
   .mono-cell { color: var(--text-muted); }
-  td[data-label="Detail"] { white-space: nowrap; }
+  /* Detail now regularly carries a leave type, AM/PM, shift hours and an
+     anomaly note in one cell, so it gets the space and Department/Supervisor
+     are capped narrower to free it up. ellipsis stays only as a last-resort
+     net for something genuinely extreme. */
+  td[data-label="Detail"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+  th:nth-child(2), td[data-label="Department"],
+  th:nth-child(3), td[data-label="Supervisor"] {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px;
+  }
+  /* table-layout:fixed takes its widths from the HEADER row, not from
+     max-width on body cells — so these have to be set on the th, which is
+     why an earlier attempt at max-width on the td did nothing at all. */
+  thead th:nth-child(1) { width: 22%; }
+  thead th:nth-child(2) { width: 11%; }
+  thead th:nth-child(3) { width: 11%; }
+  thead th:nth-child(4) { width: 56%; }
 
   #scrollTopBtn {
     position: fixed;
@@ -494,6 +518,13 @@
     margin-bottom: 12px;
     display: none;
   }
+
+  /* Pre-auth state. Two situations need the board hidden: no URL saved yet
+     (the login gate must stay down so the setup box is reachable), and not
+     signed in (the gate covers everything anyway). Without this, the no-URL
+     case renders the whole dashboard shell — toolbar, cards, Log out link —
+     which reads as though you're already inside, even with no data loaded. */
+  body.pre-auth .hide-until-auth { display: none !important; }
 </style>
 </head>
 <body>
@@ -505,8 +536,8 @@
     <div id="loginForm">
       <div class="auth-title">Shift Board Login</div>
       <div class="auth-subtitle">Sign in with your System ID.</div>
-      <input type="text" id="loginSystemId" placeholder="System ID" autocomplete="username">
-      <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password">
+      <input type="text" id="loginSystemId" placeholder="Enter your System ID" autocomplete="username">
+      <input type="password" id="loginPassword" placeholder="Enter your password" autocomplete="current-password">
       <button class="auth-submit" id="loginSubmitBtn">Log In</button>
       <div class="auth-toggle">Not registered yet? <a id="showRegisterLink">Register</a></div>
     </div>
@@ -514,7 +545,7 @@
     <div id="registerForm" style="display:none;">
       <div class="auth-title">Register</div>
       <div class="auth-subtitle">Only approved System IDs can register. Yours is checked against the current Sprout employee list.</div>
-      <input type="text" id="registerSystemId" placeholder="System ID" autocomplete="username">
+      <input type="text" id="registerSystemId" placeholder="Enter your System ID" autocomplete="username">
       <input type="password" id="registerPassword" placeholder="Choose a password (min. 8 characters)" autocomplete="new-password">
       <input type="password" id="registerPasswordConfirm" placeholder="Confirm password" autocomplete="new-password">
       <button class="auth-submit" id="registerSubmitBtn">Register</button>
@@ -541,24 +572,14 @@
     </div>
   </div>
 
-  <div class="setup-box" id="setupBox">
-    <div class="label">One-time setup: paste your Apps Script Web App URL</div>
-    <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/XXXX/exec">
-    <button id="saveUrlBtn">Save &amp; Connect</button>
-    <div style="font-size: 11px; opacity: 0.6; margin-top: 12px;">
-      Just the plain <code>/exec</code> URL — no access key on the end any more, since you log in instead. Saved in this browser only, so you'll paste it again on another device or browser. Your Sprout credentials are separate: those live in the Apps Script project's Script Properties and already work everywhere.
-    </div>
-  </div>
-
   <div class="banner error" id="errorBanner"></div>
   <div class="banner info" id="infoBanner"></div>
 
-  <div class="control-bar">
+  <div class="control-bar hide-until-auth">
     <button class="refresh-btn" id="refreshBtn">Refresh</button>
     <button class="refresh-btn" id="exportBtn">Export to Excel</button>
     <span class="status-text" id="lastUpdated">Not connected yet</span>
     <span class="status-text" id="scheduleAdjustmentNote" style="opacity:0.65;"></span>
-    <span class="settings-link" id="settingsLink">Change URL</span>
     <span class="settings-link" id="resetAdminLink">Reset an admin account</span>
     <span class="settings-link" id="logoutLink">Log out</span>
   </div>
@@ -568,7 +589,7 @@
     <div id="resetAdminError" class="banner error" style="display:none;"></div>
     <div id="resetAdminSuccess" class="banner info" style="display:none;"></div>
 
-    <input type="text" id="resetAdminSystemId" placeholder="Their System ID">
+    <input type="text" id="resetAdminSystemId" placeholder="Enter the System ID to reset">
     <button id="resetAdminBtn">Reset This Account</button>
 
     <div style="font-size: 11px; opacity: 0.6; margin-top: 14px; line-height: 1.5;">
@@ -576,7 +597,7 @@
     </div>
   </div>
 
-  <div class="control-bar" id="rangeBar">
+  <div class="control-bar hide-until-auth" id="rangeBar">
     <span class="status-text" style="margin-right: 4px;">View:</span>
     <button class="range-btn active" id="rangeToday" data-days="1">Today</button>
     <button class="range-btn" id="rangeLast2" data-days="2">Last 2 Days</button>
@@ -604,25 +625,26 @@
     </div>
   </div>
 
-  <div class="search-row">
+  <div class="search-row hide-until-auth">
     <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
     <input type="text" id="employeeSearch" placeholder="Search employee name...">
   </div>
 
-  <div class="summary" id="summaryBlock">
+  <div class="summary hide-until-auth" id="summaryBlock">
     <div class="summary-card late" data-status="late"><div class="label">Late (Shift Ongoing) <span class="info-icon" data-tooltip="No log-in or log-out recorded yet, and their shift hasn't ended — still time for them to show up."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="11"></line><circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle></svg></span></div><div class="count" id="countLate">—</div></div>
     <div class="summary-card presentbutlate" data-status="presentButLate"><div class="label">Present but Late <span class="info-icon" data-tooltip="Logged in after their shift start time, or has a log-out with no matching log-in (counted as present)."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="11"></line><circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle></svg></span></div><div class="count" id="countPresentButLate">—</div></div>
     <div class="summary-card didnotreport" data-status="didNotReport"><div class="label">Did Not Report <span class="info-icon" data-tooltip="No log-in or log-out at all, and their shift has already ended."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="11"></line><circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle></svg></span></div><div class="count" id="countDidNotReport">—</div></div>
     <div class="summary-card ontime" data-status="onTime"><div class="label">On Time <span class="info-icon" data-tooltip="Logged in at or before their scheduled shift start time."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="11"></line><circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle></svg></span></div><div class="count" id="countOntime">—</div></div>
     <div class="summary-card leave" data-status="onLeave"><div class="label">On Leave <span class="info-icon" data-tooltip="Has an approved leave request covering today."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="11"></line><circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle></svg></span></div><div class="count" id="countLeave">—</div></div>
     <div class="summary-card restday" data-status="restDay"><div class="label">Rest Day <span class="info-icon" data-tooltip="Not scheduled to work today per their shift calendar."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="11"></line><circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle></svg></span></div><div class="count" id="countRestDay">—</div></div>
+    <div class="summary-card holiday" data-status="holiday"><div class="label">Holiday <span class="info-icon" data-tooltip="A public holiday — no shift was expected. Anyone who did work shows their log times here."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="11"></line><circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle></svg></span></div><div class="count" id="countHoliday">—</div></div>
   </div>
 
-  <div id="groupsContainer"></div>
+  <div id="groupsContainer" class="hide-until-auth"></div>
 
-  <div class="footer-note">
-    This page calls your Apps Script Web App, which holds your Sprout credentials and makes the actual API calls —
-    your Client Secret never appears in this page. The URL you paste above is saved in this browser only (not sent anywhere else).
+  <div class="footer-note hide-until-auth">
+    This page is served by the same Apps Script project that holds your Sprout credentials and makes the actual API calls —
+    your Client Secret never appears in this page.
     <br><br>
     <strong>Login required.</strong> This page shows nothing until you're signed in with your own System ID, and only
     System IDs on the approved admin list can register.
@@ -660,14 +682,15 @@
 <div id="sharedTooltip"></div>
 
 <script>
-  var STATUS_ORDER = ['late', 'presentButLate', 'didNotReport', 'onTime', 'onLeave', 'restDay'];
+  var STATUS_ORDER = ['late', 'presentButLate', 'didNotReport', 'onTime', 'onLeave', 'restDay', 'holiday'];
   var STATUS_META = {
     late:            { label: 'Late (Shift Ongoing)', description: 'No log-in or log-out recorded yet, and their shift hasn\'t ended — still time for them to show up.' },
     presentButLate:  { label: 'Present but Late', description: 'Logged in after their shift start time, or has a log-out with no matching log-in (counted as present).' },
     onTime:          { label: 'On Time', description: 'Logged in at or before their scheduled shift start time.' },
     didNotReport:    { label: 'Did Not Report', description: 'No log-in or log-out at all, and their shift has already ended.' },
     onLeave:         { label: 'On Leave', description: 'Has an approved leave request covering today.' },
-    restDay:         { label: 'On Rest Day', description: 'Not scheduled to work today per their shift calendar.' }
+    restDay:         { label: 'On Rest Day', description: 'Not scheduled to work today per their shift calendar.' },
+    holiday:         { label: 'Holiday', description: 'A public holiday — no shift was expected. Anyone who did work shows their log times here.' }
   };
 
   var lastReport = null; // most recent successful report, used for Export
@@ -767,7 +790,10 @@
   // summary card's overflow:hidden (needed for its rounded-corner accent
   // strip) rather than getting clipped inside it.
   var sharedTooltip = document.getElementById('sharedTooltip');
-  document.querySelectorAll('.info-icon').forEach(function (icon) {
+  // Excludes the lazy ones — those are added and removed on every render, so
+  // a one-time querySelectorAll would never see them. They're handled by
+  // delegation further down.
+  document.querySelectorAll('.info-icon:not(.lazy-tooltip)').forEach(function (icon) {
     function showTooltip() {
       sharedTooltip.textContent = icon.getAttribute('data-tooltip');
       var rect = icon.getBoundingClientRect();
@@ -788,6 +814,84 @@
     icon.addEventListener('blur', hideTooltip);
   });
 
+  // ---- Lazy approval-date tooltips ----
+  // These icons are re-created on every report render, so they're wired by
+  // delegation on the document rather than bound individually. mouseover /
+  // mouseout (which bubble, unlike mouseenter / mouseleave) plus a
+  // relatedTarget check, so moving across the icon's own inner <svg> doesn't
+  // fire a spurious leave-then-enter pair.
+  var approvalDateCache = {}; // "employeeId|dayKey" -> text; fetched at most once per pair per page load
+
+  function positionTooltip(target) {
+    var rect = target.getBoundingClientRect();
+    sharedTooltip.classList.add('visible');
+    var tooltipRect = sharedTooltip.getBoundingClientRect();
+    var left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tooltipRect.width - 8));
+    sharedTooltip.style.left = left + 'px';
+    sharedTooltip.style.top = (rect.top - tooltipRect.height - 8) + 'px';
+  }
+
+  function formatApprovalTooltip(data) {
+    if (!data.dateApproved) return 'Approval date not available for this leave.';
+    var d = new Date(data.dateApproved);
+    if (isNaN(d.getTime())) return 'Approval date not available for this leave.';
+    return 'Approved ' + d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+      + ' at ' + d.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function showLazyTooltip(icon) {
+    var employeeId = icon.getAttribute('data-lazy-employee');
+    var dayKey = icon.getAttribute('data-lazy-date');
+    var cacheKey = employeeId + '|' + dayKey;
+
+    if (approvalDateCache[cacheKey]) {
+      sharedTooltip.textContent = approvalDateCache[cacheKey];
+      positionTooltip(icon);
+      return;
+    }
+    sharedTooltip.textContent = 'Loading…';
+    positionTooltip(icon);
+
+    gasCall('apiLeaveApprovalDate', { token: getToken(), employeeId: employeeId, date: dayKey })
+      .then(function (data) {
+        var text = (data && data.ok) ? formatApprovalTooltip(data) : 'Approval date not available right now.';
+        approvalDateCache[cacheKey] = text;
+        // Only paint if this icon is still the one being hovered — a quick
+        // mouse can have moved on long before three Sprout calls return.
+        if (sharedTooltip.classList.contains('visible')) {
+          sharedTooltip.textContent = text;
+          positionTooltip(icon);
+        }
+      })
+      .catch(function () {
+        if (sharedTooltip.classList.contains('visible')) {
+          sharedTooltip.textContent = 'Approval date not available right now.';
+        }
+      });
+  }
+
+  document.addEventListener('mouseover', function (e) {
+    var icon = e.target.closest && e.target.closest('.lazy-tooltip');
+    if (!icon) return;
+    if (icon.contains(e.relatedTarget)) return; // moved within the same icon
+    showLazyTooltip(icon);
+  });
+  document.addEventListener('mouseout', function (e) {
+    var icon = e.target.closest && e.target.closest('.lazy-tooltip');
+    if (!icon) return;
+    if (icon.contains(e.relatedTarget)) return;
+    sharedTooltip.classList.remove('visible');
+  });
+  document.addEventListener('focusin', function (e) {
+    var icon = e.target.closest && e.target.closest('.lazy-tooltip');
+    if (icon) showLazyTooltip(icon);
+  });
+  document.addEventListener('focusout', function (e) {
+    var icon = e.target.closest && e.target.closest('.lazy-tooltip');
+    if (icon) sharedTooltip.classList.remove('visible');
+  });
+
   function applyTheme(theme) {
     document.documentElement.classList.toggle('light', theme === 'light');
     document.getElementById('themeToggle').classList.toggle('is-light', theme === 'light');
@@ -804,16 +908,29 @@
     applyTheme(current === 'light' ? 'dark' : 'light');
   });
 
-  function getSavedUrl() {
-    try { return localStorage.getItem('shiftBoardScriptUrl') || ''; } catch (e) { return ''; }
-  }
-  function saveUrl(url) {
-    try { localStorage.setItem('shiftBoardScriptUrl', url); } catch (e) {}
+  // --- Calling the backend --------------------------------------------
+  // The page is served by the same Apps Script project that answers these,
+  // so this is a direct same-origin call: no URL to configure, no redirect,
+  // no CORS. Server functions return JSON strings because google.script.run
+  // mangles Dates inside nested objects on the way back — stringifying there
+  // and parsing here keeps the payload identical to the old JSON endpoint's,
+  // which is why none of the rendering code below needed to change.
+  function gasCall(fnName, arg) {
+    return new Promise(function (resolve, reject) {
+      google.script.run
+        .withSuccessHandler(function (raw) {
+          try { resolve(JSON.parse(raw)); }
+          catch (err) { reject(new Error('Unreadable response from the server.')); }
+        })
+        .withFailureHandler(function (err) {
+          reject(new Error(err && err.message ? err.message : String(err)));
+        })[fnName](arg);
+    });
   }
 
-  function showSetup(show) {
-    document.getElementById('setupBox').classList.toggle('hidden', !show);
-  }
+
+
+
   function showError(msg) {
     var b = document.getElementById('errorBanner');
     b.textContent = msg;
@@ -838,13 +955,51 @@
   // recovering from an error) — once it's populated at least one time,
   // this returns null and no banner shows, since the data is simply
   // working normally from then on (possibly a few minutes old, not "down").
+  // A full cache cycle takes ~30 minutes at Firstmac's employee count, so
+  // anything past two hours means cycles have stopped completing rather
+  // than one running long.
+  var CACHE_STALE_AFTER_MS = 2 * 60 * 60 * 1000;
+
+  function cacheAgeMs(cache) {
+    if (!cache || !cache.lastRefreshedAt) return null;
+    return Date.now() - new Date(cache.lastRefreshedAt).getTime();
+  }
+
+  function humanAge(ms) {
+    var mins = Math.round(ms / 60000);
+    if (mins < 90) return mins + ' minutes';
+    var hours = Math.round(mins / 60);
+    if (hours < 48) return hours + ' hours';
+    return Math.round(hours / 24) + ' days';
+  }
+
   function scheduleAdjustmentCacheMessage(cache) {
     if (!cache) return null;
-    if (cache.lastRefreshedAt) return null; // has completed at least once — treat as normal, no banner
+
+    // A stopped cache is the nastiest failure this dashboard has, because
+    // it doesn't look like a failure: leave, holidays and schedule
+    // adjustments all quietly read as "none", which is indistinguishable
+    // from a genuinely uneventful week. Apps Script disables time-driven
+    // triggers that fail repeatedly, so this is a real thing that happens
+    // on its own. Say so loudly rather than leaving it to be noticed.
+    var age = cacheAgeMs(cache);
+    if (age !== null && age > CACHE_STALE_AFTER_MS) {
+      return 'Leave, holidays and schedule adjustments last updated ' + humanAge(age) + ' ago, and should refresh every ~30 minutes. '
+        + 'Until this catches up, those three may show as "none" for everyone — which looks the same as a quiet day. '
+        + 'Check that the refresh trigger is still installed (run inspectScheduleCache in the script editor).';
+    }
+    if (cache.lastRefreshedAt) return null; // completed recently — normal
+
     if (cache.lastError) {
       return 'Schedule adjustments could not load yet (' + cache.lastError + ') — will keep retrying in the background.';
     }
-    return 'Schedule adjustments are still loading for the first time — one-off schedule changes may not show yet. This can take a few minutes for a large employee list.';
+    if (cache.isRefreshing) {
+      return 'Schedule adjustments are still loading for the first time — one-off schedule changes may not show yet. This can take a few minutes for a large employee list.';
+    }
+    // Never completed AND not currently running: the background job isn't
+    // going at all. Almost always a missing trigger after a fresh deploy.
+    return 'The background refresh has never completed, and is not running now. Leave, holidays and schedule adjustments will all show as "none" until it does. '
+      + 'Run installScheduleCacheTrigger() once in the script editor.';
   }
 
   // Small, persistent (not just cold-start) note next to "Last updated" —
@@ -854,14 +1009,36 @@
   // just flagging the one-time cold-start wait.
   function renderScheduleAdjustmentNote(cache) {
     var el = document.getElementById('scheduleAdjustmentNote');
+    el.style.color = '';
+    el.style.fontWeight = '';
+    el.style.opacity = '';
+    el.title = '';
+
     if (!cache) { el.textContent = ''; return; }
+
+    var age = cacheAgeMs(cache);
+    if (age !== null && age > CACHE_STALE_AFTER_MS) {
+      // Deliberately loud. This note is the only place a stopped cache is
+      // visible, and its whole failure mode is looking like normal data.
+      el.textContent = '· Sync STALE — last completed ' + humanAge(age) + ' ago';
+      el.style.color = 'var(--late)';
+      el.style.fontWeight = '700';
+      el.style.opacity = '1';
+      el.title = 'Leave, holidays and schedule adjustments may be showing as "none" for everyone. Run inspectScheduleCache in the script editor.';
+      return;
+    }
+
     if (cache.lastRefreshedAt) {
       var t = new Date(cache.lastRefreshedAt);
       el.textContent = '· Schedule adjustments synced ' + t.toLocaleTimeString('en-PH', { hour12: false });
     } else if (cache.isRefreshing) {
       el.textContent = '· Schedule adjustments syncing for the first time…';
     } else {
-      el.textContent = '';
+      el.textContent = '· Background sync has never run';
+      el.style.color = 'var(--late)';
+      el.style.fontWeight = '700';
+      el.style.opacity = '1';
+      el.title = 'Run installScheduleCacheTrigger() once in the script editor.';
     }
   }
 
@@ -930,6 +1107,16 @@
       result = timesHtml || '—';
     } else if (status === 'late' || status === 'didNotReport') {
       var reason = escapeHtml(e.reason || '');
+      // Scheduled hours, shown for "Late (Shift Ongoing)" per client
+      // feedback: without them there was no way to judge how late is late,
+      // or when a graveyard shift is actually due to end.
+      if (status === 'late' && e.scheduledShiftStart) {
+        var shiftStartDisp = formatLogTime(e.scheduledShiftStart);
+        var shiftEndDisp = formatLogTime(e.scheduledShiftEnd);
+        if (shiftStartDisp && shiftEndDisp) {
+          reason += (reason ? ' · ' : '') + 'Shift: ' + escapeHtml(shiftStartDisp) + ' – ' + escapeHtml(shiftEndDisp);
+        }
+      }
       result = timesHtml ? (reason ? (reason + ' — ' + timesHtml) : timesHtml) : (reason || '—');
     } else if (status === 'onLeave') {
       var leaveDateText = '';
@@ -938,12 +1125,46 @@
         var toDisp = formatDateKeyForDisplay(e.leaveTo);
         leaveDateText = (e.leaveFrom === e.leaveTo) ? fromDisp : (fromDisp + ' – ' + toDisp);
       }
-      var leaveLabel = leaveDateText ? ('On leave (' + leaveDateText + ')') : 'On approved leave';
+      // AM/PM comes straight from the leave application itself — Sprout's
+      // own isFirstHalf says which half was filed, so nothing is inferred.
+      // It leads the phrase ("On AM leave") rather than trailing it, so it
+      // reads naturally instead of like an afterthought.
+      var leavePrefix = (e.leaveIsHalfDay && e.leaveHalfDayPeriod)
+        ? ('On ' + e.leaveHalfDayPeriod + ' leave')
+        : 'On leave';
+      var leaveLabel = leaveDateText ? (leavePrefix + ' (' + leaveDateText + ')') : 'On approved leave';
+      // Fallback for a half-day whose period Sprout didn't record. Half-day
+      // matters most exactly where the red flag below fires: someone on a
+      // morning half-day who worked the afternoon is entirely normal, and
+      // without any marker looks identical to a real anomaly. The AM/PM
+      // prefix already covers that when the period is known, so this only
+      // fires when it isn't.
+      if (e.leaveIsHalfDay && !e.leaveHalfDayPeriod) leaveLabel += ' · half-day';
+      // Leave type, per client feedback — for tracking and validation. Kept
+      // outside the parentheses so the date range stays the most scannable
+      // part of the label.
+      if (e.leaveType) leaveLabel += ' — ' + e.leaveType;
       var range = escapeHtml(leaveLabel);
+      // Approval date/time, fetched only when this icon is actually hovered.
+      // Three live Sprout calls per lookup, so nothing is fetched up front —
+      // the report itself stays at zero added API cost.
+      if (e.systemId && e.viewedDayKey) {
+        range += ' <span class="info-icon lazy-tooltip" data-lazy-employee="' + escapeHtml(String(e.systemId))
+          + '" data-lazy-date="' + escapeHtml(e.viewedDayKey) + '" tabindex="0">'
+          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+          + '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="11"></line>'
+          + '<circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle></svg></span>';
+      }
       // Logs during approved leave are worth flagging visually — someone
       // checking in while marked on leave is worth a second look, so this
       // gets parentheses + red, unlike the plain log times shown elsewhere.
       result = timesHtml ? (range + ' <span style="color:var(--late);">(' + timesHtml + ')</span>') : range;
+    } else if (status === 'holiday') {
+      var holidayLabel = escapeHtml(e.holidayName || 'Holiday');
+      // Working on a holiday isn't an anomaly — it's usually premium pay —
+      // so the times are shown plainly rather than in the red used for
+      // logging in during approved leave.
+      result = timesHtml ? (holidayLabel + ' — ' + timesHtml) : holidayLabel;
     } else if (status === 'restDay') {
       var restLabel = escapeHtml('On rest day');
       result = timesHtml ? (restLabel + ' <span style="color:var(--late);">(' + timesHtml + ')</span>') : restLabel;
@@ -968,6 +1189,13 @@
       result = times || '—';
     } else if (status === 'late' || status === 'didNotReport') {
       var reason = e.reason || '';
+      if (status === 'late' && e.scheduledShiftStart) {
+        var shiftStartDisp2 = formatLogTime(e.scheduledShiftStart);
+        var shiftEndDisp2 = formatLogTime(e.scheduledShiftEnd);
+        if (shiftStartDisp2 && shiftEndDisp2) {
+          reason += (reason ? ' · ' : '') + 'Shift: ' + shiftStartDisp2 + ' – ' + shiftEndDisp2;
+        }
+      }
       result = times ? (reason ? (reason + ' — ' + times) : times) : (reason || '—');
     } else if (status === 'onLeave') {
       var leaveDateText2 = '';
@@ -976,8 +1204,16 @@
         var toDisp2 = formatDateKeyForDisplay(e.leaveTo);
         leaveDateText2 = (e.leaveFrom === e.leaveTo) ? fromDisp2 : (fromDisp2 + ' – ' + toDisp2);
       }
-      var range = leaveDateText2 ? ('On leave (' + leaveDateText2 + ')') : 'On approved leave';
+      var leavePrefix2 = (e.leaveIsHalfDay && e.leaveHalfDayPeriod)
+        ? ('On ' + e.leaveHalfDayPeriod + ' leave')
+        : 'On leave';
+      var range = leaveDateText2 ? (leavePrefix2 + ' (' + leaveDateText2 + ')') : 'On approved leave';
+      if (e.leaveIsHalfDay && !e.leaveHalfDayPeriod) range += ' - half-day';
+      if (e.leaveType) range += ' — ' + e.leaveType;
       result = times ? (range + ' (' + times + ')') : range;
+    } else if (status === 'holiday') {
+      var holidayPlain = e.holidayName || 'Holiday';
+      result = times ? (holidayPlain + ' - ' + times) : holidayPlain;
     } else if (status === 'restDay') {
       result = times ? ('On rest day (' + times + ')') : 'On rest day';
     } else {
@@ -990,6 +1226,19 @@
     var div = document.createElement('div');
     div.textContent = str == null ? '' : String(str);
     return div.innerHTML;
+  }
+
+  // A stable label for an employee's scheduled shift — "9:00PM–6:00AM" —
+  // built from the same scheduledShiftStart/End already shown in the Detail
+  // column for Late (Shift Ongoing). Used to group and filter that category
+  // by shift time, which is what the client asked for rather than filtering
+  // by department. Returns null when either boundary is missing, so callers
+  // can fall back to an "Unknown shift" bucket instead of mislabelling.
+  function shiftSignatureFor(e) {
+    var startDisp = formatLogTime(e.scheduledShiftStart);
+    var endDisp = formatLogTime(e.scheduledShiftEnd);
+    if (!startDisp || !endDisp) return null;
+    return startDisp + '–' + endDisp;
   }
 
   function renderGroups(report, containerEl) {
@@ -1031,8 +1280,34 @@
       if (isEmpty) {
         body.innerHTML = '<div class="group-empty">No one in this category.</div>';
       } else {
+        // Shift-time filter, only for Late (Shift Ongoing) and only when
+        // there is genuinely more than one shift to pick between. Built from
+        // what is actually in this list today rather than a fixed set, so it
+        // can't drift out of step with real schedules.
+        var shiftFilterHtml = '';
+        if (status === 'late') {
+          var signatures = list.map(function (e) { return shiftSignatureFor(e) || 'Unknown shift'; });
+          var distinctSignatures = signatures.filter(function (sig, i) { return signatures.indexOf(sig) === i; });
+          if (distinctSignatures.length > 1) {
+            var optionsHtml = '<option value="__all__">All shifts</option>' +
+              distinctSignatures.map(function (sig) {
+                return '<option value="' + escapeHtml(sig) + '">' + escapeHtml(sig) + '</option>';
+              }).join('');
+            shiftFilterHtml =
+              '<div class="shift-filter-row">' +
+                '<label>Filter by shift: ' +
+                  '<select class="shift-filter-select">' + optionsHtml + '</select>' +
+                '</label>' +
+              '</div>';
+          }
+        }
+        if (shiftFilterHtml) body.innerHTML = shiftFilterHtml;
+
         var rowsHtml = list.map(function (e) {
-          return '<tr>' +
+          var shiftAttr = status === 'late'
+            ? ' data-shift-signature="' + escapeHtml(shiftSignatureFor(e) || 'Unknown shift') + '"'
+            : '';
+          return '<tr' + shiftAttr + '>' +
             '<td class="emp-name" data-label="Employee">' + escapeHtml(e.name) + '</td>' +
             '<td class="mono-cell" data-label="Department">' + escapeHtml(e.department || '—') + '</td>' +
             '<td class="mono-cell" data-label="Supervisor">' + escapeHtml(e.supervisor || '—') + '</td>' +
@@ -1046,6 +1321,21 @@
           '<thead><tr><th>Employee</th><th>Department</th><th>Supervisor</th><th>Detail</th></tr></thead>' +
           '<tbody>' + rowsHtml + '</tbody>';
         body.appendChild(table);
+
+        if (shiftFilterHtml) {
+          var shiftSelect = body.querySelector('.shift-filter-select');
+          var tbodyEl = table.querySelector('tbody');
+          shiftSelect.addEventListener('change', function () {
+            var chosen = shiftSelect.value;
+            tbodyEl.querySelectorAll('tr').forEach(function (row) {
+              var matches = chosen === '__all__' || row.getAttribute('data-shift-signature') === chosen;
+              row.style.display = matches ? '' : 'none';
+            });
+          });
+          // Keep clicks on the dropdown from bubbling up to the group header,
+          // which would collapse the section you're trying to filter.
+          shiftSelect.addEventListener('click', function (evt) { evt.stopPropagation(); });
+        }
       }
 
       groupEl.appendChild(header);
@@ -1219,22 +1509,14 @@
   // cache, and it can differ from the page's own origin. Errors here are
   // silently ignored; this is a nice-to-have nudge, never something the
   // dashboard's own refresh should be blocked or interrupted by.
-  function nudgeScheduleAdjustmentSync(reportApiUrl) {
-    try {
-      // Apps Script web apps only expose doGet, so this is a GET with
-      // &nudge=1 rather than the Node version's POST to a dedicated
-      // endpoint. Same intent: ask the background cache to run sooner
-      // than its next trigger firing, without making this refresh wait.
-      var nudgeUrl = withToken(reportApiUrl) + '&nudge=1';
-      fetch(nudgeUrl).catch(function () {});
-    } catch (e) {}
+  function nudgeScheduleAdjustmentSync() {
+    // Deliberately not awaited — this is a nice-to-have top-up, never
+    // something the dashboard's own refresh should wait on or be broken by.
+    gasCall('apiNudge', { token: getToken() }).catch(function () {});
   }
 
   function fetchReport() {
-    var url = getSavedUrl();
-    if (!url) { showSetup(true); return; }
-
-    nudgeScheduleAdjustmentSync(url);
+    nudgeScheduleAdjustmentSync();
 
     hideError();
     setLoadingState(true);
@@ -1248,16 +1530,15 @@
     }
     document.getElementById('lastUpdated').innerHTML = loadingMsg;
 
-    var requestUrl = url;
+    var request = { token: getToken() };
     if (selectedCustomRange) {
-      requestUrl += (url.indexOf('?') === -1 ? '?' : '&') + 'from=' + selectedCustomRange.from + '&to=' + selectedCustomRange.to;
+      request.from = selectedCustomRange.from;
+      request.to = selectedCustomRange.to;
     } else if (selectedDays > 1) {
-      requestUrl += (url.indexOf('?') === -1 ? '?' : '&') + 'days=' + selectedDays;
+      request.days = selectedDays;
     }
 
-    fetch(withToken(requestUrl)).then(function (response) {
-      return response.json();
-    }).then(function (data) {
+    gasCall('apiReport', request).then(function (data) {
       setLoadingState(false);
       if (!data.ok) {
         // Apps Script can't return a real 401, so an expired or missing
@@ -1265,6 +1546,7 @@
         // same way the Node version handles a 401 response.
         if (data.notLoggedIn) {
           setToken('');
+          setPreAuth(true);
           showAuthGate(true);
           document.getElementById('lastUpdated').textContent = 'Signed out';
           return;
@@ -1277,7 +1559,6 @@
       var summaryBlock = document.getElementById('summaryBlock');
       var t = new Date(data.generatedAt);
       document.getElementById('lastUpdated').textContent = 'Last updated ' + t.toLocaleTimeString('en-PH', { hour12: false });
-      showSetup(false);
       hideInfo();
 
       if (data.reports) {
@@ -1313,34 +1594,17 @@
       applyEmployeeFilter();
     }).catch(function (err) {
       setLoadingState(false);
-      // TypeError here means fetch() itself failed (bad URL, network issue,
-      // CORS) — the other error types below all come from explicit throws
-      // above with a message already tailored to what happened.
-      var msg = (err instanceof TypeError)
-        ? 'Could not reach the Apps Script Web App at the configured URL. Check the URL is correct and ends in /exec, and that the deployment is set to "Anyone" access. (' + err.message + ')'
-        : err.message;
+      // Errors here come either from google.script.run's failure handler
+      // (the server function threw) or from an explicit throw above with a
+      // message already tailored to what happened.
+      var msg = err.message;
       showError(msg);
       document.getElementById('lastUpdated').textContent = 'Failed to load';
     });
   }
 
-  document.getElementById('saveUrlBtn').addEventListener('click', function () {
-    var url = document.getElementById('scriptUrlInput').value.trim();
-    if (!url) return;
-    saveUrl(url);
-    // Re-run the session check rather than fetching straight away — with a
-    // URL now saved, this either starts the dashboard or raises the login
-    // gate, instead of firing a request that has no token behind it.
-    checkAuthAndStart();
-  });
-
   document.getElementById('refreshBtn').addEventListener('click', fetchReport);
   document.getElementById('exportBtn').addEventListener('click', exportToExcel);
-
-  document.getElementById('settingsLink').addEventListener('click', function () {
-    document.getElementById('scriptUrlInput').value = getSavedUrl();
-    showSetup(true);
-  });
 
   document.querySelectorAll('.range-btn').forEach(function (btn) {
     if (btn.id === 'rangeCustom') return; // handled separately below
@@ -1446,13 +1710,7 @@
   // Everything that actually loads/shows dashboard content — only ever
   // called once a valid session is confirmed (see checkAuthAndStart below).
   function startApp() {
-    var savedUrl = getSavedUrl();
-    if (savedUrl) {
-      document.getElementById('scriptUrlInput').value = savedUrl;
-      fetchReport();
-    } else {
-      showSetup(true);
-    }
+    fetchReport();
     startIdleLogoutTimer();
   }
 
@@ -1470,22 +1728,15 @@
       else localStorage.removeItem('shiftBoardToken');
     } catch (e) {}
   }
-  function withToken(url) {
-    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(getToken());
-  }
 
-  // Posts to the Apps Script Web App. Content-Type is text/plain so this
-  // stays a "simple" CORS request — a JSON content type would trigger an
-  // OPTIONS preflight, and an Apps Script web app has no way to answer one.
-  // The body is still JSON; only the header differs.
+
+  // Login, registration and admin reset. This used to be a cross-origin
+  // POST, which could never work: Apps Script answers a POST with a
+  // redirect, and browsers re-issue a redirected POST as a GET, dropping
+  // the body — so the credentials never arrived and the request landed in
+  // doGet instead. A same-origin google.script.run call has no such problem.
   function apiPost(payload) {
-    var url = getSavedUrl();
-    if (!url) return Promise.reject(new Error('No Apps Script URL saved yet.'));
-    return fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    }).then(function (res) { return res.json(); });
+    return gasCall('apiAuth', payload);
   }
 
   // Auto-logout after 30 minutes with no mouse/keyboard/scroll/touch
@@ -1512,6 +1763,12 @@
 
   function showAuthGate(show) {
     document.getElementById('authGate').style.display = show ? 'flex' : 'none';
+  }
+  // Hides the board itself — deliberately separate from the gate, because
+  // the no-URL case needs the gate DOWN (so the setup box is reachable)
+  // while the board still must not be on show.
+  function setPreAuth(isPreAuth) {
+    document.body.classList.toggle('pre-auth', !!isPreAuth);
   }
   function authError(msg) {
     var el = document.getElementById('authError');
@@ -1547,6 +1804,7 @@
         if (!body.ok) { authError(body.error || 'Could not log in.'); return; }
         setToken(body.token);
         showAuthGate(false);
+        setPreAuth(false);
         startApp();
       }).catch(function (err) {
         authError('Could not log in: ' + err.message);
@@ -1574,6 +1832,7 @@
         if (!body.ok) { authError(body.error || 'Could not register.'); return; }
         setToken(body.token);
         showAuthGate(false);
+        setPreAuth(false);
         startApp();
       }).catch(function (err) {
         authError('Could not register: ' + err.message);
@@ -1630,21 +1889,12 @@
   // Checked once on page load. Shows the login/register gate if there's no
   // valid session; otherwise hides it and starts the dashboard as normal.
   function checkAuthAndStart() {
-    var url = getSavedUrl();
-    if (!url) {
-      // Nothing to check a session against yet. The gate must stay HIDDEN
-      // here: it covers the whole page, including the setup box, so showing
-      // it before a URL exists would leave no way to enter one — and
-      // logging in needs that URL to post to.
-      showAuthGate(false);
-      showSetup(true);
-      return;
-    }
-    fetch(withToken(url) + '&action=session')
-      .then(function (res) { return res.json(); })
+    setPreAuth(true);
+    gasCall('apiSession', { token: getToken() })
       .then(function (data) {
         if (data.ok && data.loggedIn) {
           showAuthGate(false);
+          setPreAuth(false);
           startApp();
         } else {
           showAuthGate(true);
